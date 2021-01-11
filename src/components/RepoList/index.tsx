@@ -1,8 +1,10 @@
-import React from "react";
-import { Pagination } from "antd";
-
+import React, { useEffect, useState } from "react";
+import { Spin, Pagination } from "antd";
+import linkHeaderParser from "parse-link-header";
 import RepoTable from "./list";
+import { RepoDataType, RepoResponseData } from "./types";
 import "../../styles/repo-list.css";
+import api from "../../services/api";
 
 const columns = [
   {
@@ -20,37 +22,85 @@ const columns = [
 ];
 
 const RepoList: React.FC = (): React.ReactElement => {
+  const [isLoading, setIsLoading] = useState<true | false>(true);
+  const [pageNumber, setPageNumber] = useState(1);
+  const [totalPageCount, setTotalPageCount] = useState(0);
+  const [repos, setRepoLists] = useState<RepoResponseData[] | null>(null);
+
+  const fetchRepo = async (page: number) => {
+    setIsLoading(true);
+    try {
+      const response: Response | null = await api(page);
+      setIsLoading(false);
+      if (response) {
+        const data: RepoResponseData[] = await response.json();
+        setRepoLists(data);
+        const { headers }: { headers: Headers } = response;
+        const link: string | null = headers.get("link");
+        if (link) {
+          const paginationData: linkHeaderParser.Links | null = linkHeaderParser(
+            link
+          );
+          console.log(paginationData);
+          if (paginationData) {
+            setTotalPageCount(
+              Number(paginationData.last.page) *
+                Number(paginationData.last.per_page)
+            );
+          }
+        }
+      }
+    } catch (err) {
+      setRepoLists(null);
+    }
+  };
+
+  useEffect(() => {
+    (async () => {
+      fetchRepo(pageNumber);
+    })();
+  }, [pageNumber]);
+
+  const formatData = () => {
+    const data: RepoDataType[] = [];
+    if (repos) {
+      repos.forEach((repo) => {
+        // eslint-disable array-callback-return
+        data.push({
+          name: (
+            <a href={repo.html_url} target="_blank" rel="noreferrer">
+              {repo.name}
+            </a>
+          ),
+          star: repo.stargazers_count,
+          fork: repo.forks_count,
+          key: repo.id,
+        });
+      });
+    }
+
+    return data;
+  };
   return (
     <div className="repo-table-wrapper">
-      <RepoTable
-        data={[
-          {
-            name: (
-              <a
-                href="https://github.com/raheemazeezabiodun"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Github repo
-              </a>
-            ),
-            star: 10,
-            fork: 10,
-            key: 1,
-          },
-        ]}
-        columns={columns}
-      />
-      <div className="pagination-wrapper">
-        <Pagination
-          current={0}
-          total={20}
-          showSizeChanger={false}
-          onChange={(page) => {
-            console.log("holla", page);
-          }}
-        />
-      </div>
+      {isLoading ? (
+        <Spin />
+      ) : (
+        <>
+          <RepoTable data={formatData()} columns={columns} />
+          <div className="pagination-wrapper">
+            <Pagination
+              current={pageNumber}
+              total={totalPageCount}
+              showSizeChanger={false}
+              onChange={(page) => {
+                setPageNumber(page);
+                fetchRepo(page);
+              }}
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 };
